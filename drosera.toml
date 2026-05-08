@@ -6,10 +6,9 @@ drosera_address = "0x01C344b8406c3237a6b9dbd06ef2832142866d87"
 [traps.templedao_migration_backing_trap]
 path = "out/TempleMigrationBackingTrap.sol/TempleMigrationBackingTrap.json"
 
-# Replace this sentinel with the deployed TempleMigrationRiskResponse address
-# before running `drosera apply`. It is intentionally non-zero so config review
-# catches accidental use, but it is not a deployed response contract.
-response_contract = "0x1111111111111111111111111111111111111111"
+# Blank because TempleMigrationRiskResponse has not been deployed on mainnet.
+# Set this to the deployed response address before `drosera apply`.
+response_contract = ""
 response_function = "handleIncident((bytes32,bytes32,address,uint256,uint256,uint256,address,address,uint256,bytes32,bytes))"
 
 cooldown_period_blocks = 5
@@ -21,7 +20,7 @@ whitelist = []
 
 [alerts.telegram]
 enabled = true
-sink_contract = "0x2222222222222222222222222222222222222222"
+sink_contract = ""
 event = "TelegramAlertRequested(bytes32,bytes32,address,uint256,uint256,uint256,address,address,uint256,bytes32)"
 webhook_url = "https://YOUR_WEBHOOK_HOST/drosera/templedao"
 webhook_secret_header = "x-webhook-secret"
