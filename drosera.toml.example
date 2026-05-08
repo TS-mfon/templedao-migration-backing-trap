@@ -1,0 +1,19 @@
+ethereum_rpc = "https://ethereum-rpc.publicnode.com"
+drosera_rpc = "https://relay.ethereum.drosera.io"
+eth_chain_id = 1
+drosera_address = "0x01C344b8406c3237a6b9dbd06ef2832142866d87"
+
+[traps.templedao_migration_backing_trap]
+path = "out/TempleMigrationBackingTrap.sol/TempleMigrationBackingTrap.json"
+response_contract = "0xREPLACE_WITH_DEPLOYED_RESPONSE"
+response_function = "handleIncident((bytes32,bytes32,address,uint256,uint256,uint256,address,address,uint256,bytes32,bytes))"
+cooldown_period_blocks = 5
+min_number_of_operators = 1
+max_number_of_operators = 3
+block_sample_size = 3
+private_trap = false
+whitelist = []
+
+# Configure your Drosera webhook/notification integration to POST decoded
+# TempleTelegramAlertSink.TelegramAlertRequested events or response payloads to:
+# https://YOUR_WEBHOOK_HOST/drosera/templedao

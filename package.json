@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test -vvv",
+    "telegram:webhook": "node webhook/telegram-alert-webhook.js"
+  },
+  "devDependencies": {}
+}
