@@ -146,6 +146,16 @@ export PORT=8787
 npm run telegram:webhook
 ```
 
+You can also start from the checked-in template:
+
+```bash
+cp alerts.env.example .env
+set -a
+source .env
+set +a
+npm run telegram:webhook
+```
+
 Expose it with your preferred HTTPS service, for example Nginx, Cloudflare Tunnel, or a hosted Node service. The endpoint is:
 
 ```text
@@ -157,6 +167,12 @@ Configure Drosera or your event-indexer webhook to POST decoded `TelegramAlertRe
 
 Do not commit the bot token. Keep it in environment variables or your secret manager.
 
+`alerts.config.example.json` documents the webhook shape expected by the relay. Replace:
+
+- `source.contract` with the deployed `TempleTelegramAlertSink`.
+- `webhook.url` with your public HTTPS webhook.
+- `x-webhook-secret` with the same value as `WEBHOOK_SECRET`.
+
 ## Deployment Sequence
 
 1. Deploy or identify a staking target that exposes `templeMigrationMetrics()` and `emergencyPause()`.
@@ -167,11 +183,14 @@ Do not commit the bot token. Keep it in environment variables or your secret man
 6. Set the staking target emergency module or response executor to the response contract.
 7. Generate `src/TrapDeployConfig.sol` with the deployed registry address.
 8. Rebuild with `forge build`.
-9. Copy `drosera.toml.example` to `drosera.toml` and set `response_contract`.
+9. Update `drosera.toml`:
+   - replace `response_contract = "0x1111111111111111111111111111111111111111"` with the deployed `TempleMigrationRiskResponse`;
+   - replace `alerts.telegram.sink_contract = "0x2222222222222222222222222222222222222222"` with the deployed `TempleTelegramAlertSink`;
+   - replace `alerts.telegram.webhook_url` with your public webhook URL.
 10. Run `drosera dryrun`.
 11. Run `drosera apply`.
 
-`drosera.toml.example` is intentionally a template because the response address is deployment-specific. It does not ship with a zero address as a deployable config.
+`drosera.toml` contains all stable Ethereum mainnet and Drosera values, but the response and alert sink addresses are deployment-specific sentinels. Do not run `drosera apply` until both are replaced with deployed addresses.
 
 ## Build and Test
 
