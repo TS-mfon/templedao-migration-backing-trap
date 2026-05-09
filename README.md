@@ -106,6 +106,8 @@ That ties a migration credit to the actual LP-token inflow observed around the m
 
 Operational reasons such as invalid sample ordering, inactive registry, missing target, failed metrics, invalid metrics, and already-paused target are surfaced through `shouldAlert()` and are rejected by the response contract if submitted to the pause path.
 
+All `shouldAlert()` trigger paths return `abi.encode(TempleTypes.Incident)`, including malformed sample alerts. If the samples are malformed and no current sample can be decoded, the trap emits a synthetic Incident with `target = address(0)`, `environmentId = bytes32(0)`, and `reasonBitmap = REASON_INVALID_METRICS`. This keeps alert decoding stable for webhooks and telemetry consumers. Integrations can use `decodeAlertOutput(bytes)` to decode the payload consistently.
+
 ## Response Payload
 
 `drosera.toml.example` uses:

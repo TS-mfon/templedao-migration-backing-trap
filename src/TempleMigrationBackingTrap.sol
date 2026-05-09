@@ -14,7 +14,7 @@ contract TempleMigrationBackingTrap is ITrap {
     uint256 public constant BACKING_TOLERANCE_BPS = 50;
     uint256 public constant CREDIT_SPIKE_BPS = 500;
     uint256 public constant MIN_MIGRATION_AMOUNT = 1e18;
-    uint256 public constant COLLECT_OUTPUT_MIN_SIZE = 16 * 32;
+    uint256 public constant COLLECT_OUTPUT_ENCODED_SIZE = 16 * 32;
     string internal constant MIGRATED_STAKE_EVENT_SIGNATURE = "MigratedStake(address,address,uint256,bool,uint256,uint256)";
     bytes32 internal constant RESPONSE_REASONS = TempleTypes.REASON_UNBACKED_STAKE
         | TempleTypes.REASON_UNTRUSTED_MIGRATOR
@@ -93,7 +93,9 @@ contract TempleMigrationBackingTrap is ITrap {
 
     function shouldAlert(bytes[] calldata data) external pure returns (bool, bytes memory) {
         if (data.length < REQUIRED_SAMPLES) return (false, bytes(""));
-        if (!_validEncodedSamples(data)) return (true, abi.encode(TempleTypes.REASON_INVALID_METRICS));
+        if (!_validEncodedSamples(data)) {
+            return _syntheticAlert(TempleTypes.REASON_INVALID_METRICS, TempleTypes.STATUS_INVALID_METRICS);
+        }
 
         TempleTypes.CollectOutput memory current = abi.decode(data[0], (TempleTypes.CollectOutput));
         bytes32 reasons;
@@ -109,6 +111,10 @@ contract TempleMigrationBackingTrap is ITrap {
 
         if (reasons == bytes32(0)) return (false, bytes(""));
         return _incident(TempleTypes.SEVERITY_WARNING, reasons, current);
+    }
+
+    function decodeAlertOutput(bytes calldata data) external pure returns (TempleTypes.Incident memory) {
+        return abi.decode(data, (TempleTypes.Incident));
     }
 
     function _criticalReasons(
@@ -150,7 +156,7 @@ contract TempleMigrationBackingTrap is ITrap {
 
     function _validEncodedSamples(bytes[] calldata data) internal pure returns (bool) {
         for (uint256 i = 0; i < data.length; i++) {
-            if (data[i].length < COLLECT_OUTPUT_MIN_SIZE) return false;
+            if (data[i].length != COLLECT_OUTPUT_ENCODED_SIZE) return false;
         }
         return true;
     }
@@ -225,6 +231,29 @@ contract TempleMigrationBackingTrap is ITrap {
                     lastBackingAfter: current.lastBackingAfter,
                     reasonBitmap: reasons,
                     extraData: abi.encode(severity, current.status)
+                })
+            )
+        );
+    }
+
+    function _syntheticAlert(bytes32 reasons, uint8 status) internal pure returns (bool, bytes memory) {
+        return (
+            true,
+            abi.encode(
+                TempleTypes.Incident({
+                    invariantId: TempleTypes.INVARIANT_ID,
+                    environmentId: bytes32(0),
+                    target: address(0),
+                    blockNumber: 0,
+                    creditedStake: 0,
+                    tokenBacking: 0,
+                    lastMigrationOldStaking: address(0),
+                    lastMigrator: address(0),
+                    lastMigrationAmount: 0,
+                    lastBackingBefore: 0,
+                    lastBackingAfter: 0,
+                    reasonBitmap: reasons,
+                    extraData: abi.encode(TempleTypes.SEVERITY_WARNING, status)
                 })
             )
         );

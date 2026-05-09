@@ -1,14 +1,14 @@
-ethereum_rpc = "https://ethereum-rpc.publicnode.com"
-drosera_rpc = "https://relay.ethereum.drosera.io"
-eth_chain_id = 1
-drosera_address = "0x01C344b8406c3237a6b9dbd06ef2832142866d87"
+ethereum_rpc = "https://ethereum-hoodi-rpc.publicnode.com"
+drosera_rpc = "https://relay.hoodi.drosera.io"
+eth_chain_id = 560048
+drosera_address = "0x91cB447BaFc6e0EA0F4Fe056F5a9b1F14bb06e5D"
 
 [traps.templedao_migration_backing_trap]
+address = "0x2819EeB9693220209991F67De80AB012592A8FD5"
 path = "out/TempleMigrationBackingTrap.sol/TempleMigrationBackingTrap.json"
 
-# Blank because TempleMigrationRiskResponse has not been deployed on mainnet.
-# Set this to the deployed response address before `drosera apply`.
-response_contract = ""
+# Hoodi TempleMigrationRiskResponse deployment.
+response_contract = "0x0b40C110ddE26C964f755DEecA90046C41bBa092"
 response_function = "handleIncident((bytes32,bytes32,address,uint256,uint256,uint256,address,address,uint256,uint256,uint256,bytes32,bytes))"
 
 cooldown_period_blocks = 5
@@ -16,19 +16,19 @@ min_number_of_operators = 3
 max_number_of_operators = 7
 block_sample_size = 3
 private_trap = false
-whitelist = []
+whitelist = ["0xEd9EDd8586b20524CafA4F568413C504C9B03172"]
 
 [alerts.telegram]
 enabled = true
-sink_contract = ""
+sink_contract = "0x0232563a0BCc28123BE645Ae8058F66688e3c28B"
 event = "TelegramAlertRequested(bytes32,bytes32,address,uint256,uint256,uint256,address,address,uint256,uint256,uint256,bytes32)"
 webhook_url = "https://YOUR_WEBHOOK_HOST/drosera/templedao"
 webhook_secret_header = "x-webhook-secret"
 
 [inputs.templedao]
 environment_id = "0x026040bf33ba210d54fc1e1788bbf2b3e7d89f32372e9bb3caf3e4e8edf5d3df"
-registry = "0x0000000000000000000000000000000000007101"
-monitored_target = "0x0000000000000000000000000000000000007102"
+registry = "0xFD8Ab47B2D53f768baDAB66cf07C401522A450bd"
+monitored_target = "0x8F2966776f3eADfD065A2FBEE6B4906D355c0B04"
 # TempleMigrationBackingTrap reads TrapDeployConfig.REGISTRY and
 # TrapDeployConfig.MONITORED_TARGET at compile time.
 # Rebuild after generating TrapDeployConfig.sol with the deployed registry and

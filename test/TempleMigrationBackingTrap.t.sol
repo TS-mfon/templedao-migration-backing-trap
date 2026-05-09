@@ -137,8 +137,8 @@ contract FailingPauseTarget is TempleStaxLikeMock {
 
 contract TempleMigrationBackingTrapTest {
     Vm internal constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
-    address internal constant REGISTRY_ADDR = 0x0000000000000000000000000000000000007101;
-    address internal constant MONITORED_TARGET = 0x0000000000000000000000000000000000007102;
+    address internal constant REGISTRY_ADDR = 0xFD8Ab47B2D53f768baDAB66cf07C401522A450bd;
+    address internal constant MONITORED_TARGET = 0x8F2966776f3eADfD065A2FBEE6B4906D355c0B04;
     address internal constant DROSERA = address(0xD005E7A);
     address internal constant ATTACKER = address(0xA77A);
     bytes32 internal constant ENV = keccak256("TEMPLEDAO_STAX_ETHEREUM");
@@ -248,8 +248,30 @@ contract TempleMigrationBackingTrapTest {
         data[2] = hex"90";
         (bool respond,) = trap.shouldRespond(data);
         _assertFalse(respond, "short bytes must not pause");
-        (bool alert,) = trap.shouldAlert(data);
+        (bool alert, bytes memory payload) = trap.shouldAlert(data);
         _assertTrue(alert, "short bytes should alert");
+        TempleTypes.Incident memory incident = trap.decodeAlertOutput(payload);
+        _assertTrue(incident.invariantId == TempleTypes.INVARIANT_ID, "synthetic invariant");
+        _assertTrue(incident.environmentId == bytes32(0), "synthetic environment");
+        _assertTrue(incident.target == address(0), "synthetic target");
+        _assertTrue(incident.blockNumber == 0, "synthetic block");
+        _assertTrue(incident.reasonBitmap == TempleTypes.REASON_INVALID_METRICS, "synthetic reason");
+        (uint8 severity, uint8 status) = abi.decode(incident.extraData, (uint8, uint8));
+        _assertTrue(severity == TempleTypes.SEVERITY_WARNING, "synthetic severity");
+        _assertTrue(status == TempleTypes.STATUS_INVALID_METRICS, "synthetic status");
+    }
+
+    function testMalformedLongBytesDoNotRevertAndReturnSyntheticIncident() public {
+        TempleMigrationBackingTrap trap = new TempleMigrationBackingTrap();
+        bytes[] memory data = _collectWindow(trap);
+        data[0] = bytes.concat(data[0], bytes32(uint256(1)));
+
+        (bool respond,) = trap.shouldRespond(data);
+        _assertFalse(respond, "long malformed bytes must not pause");
+        (bool alert, bytes memory payload) = trap.shouldAlert(data);
+        _assertTrue(alert, "long malformed bytes should alert");
+        TempleTypes.Incident memory incident = trap.decodeAlertOutput(payload);
+        _assertTrue(incident.reasonBitmap == TempleTypes.REASON_INVALID_METRICS, "long malformed reason");
     }
 
     function testRegistryInactiveCollectIsExplicit() public {
