@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {ITrap} from "./ITrap.sol";
+import {EventFilter, ITrap} from "./ITrap.sol";
 import {ITempleMigrationBackingMetrics, ITempleMigrationBackingRegistry} from "./ITempleMigrationBacking.sol";
 import {TempleTypes} from "./TempleTypes.sol";
 import {TrapDeployConfig} from "./TrapDeployConfig.sol";
@@ -15,6 +15,7 @@ contract TempleMigrationBackingTrap is ITrap {
     uint256 public constant CREDIT_SPIKE_BPS = 500;
     uint256 public constant MIN_MIGRATION_AMOUNT = 1e18;
     uint256 public constant COLLECT_OUTPUT_MIN_SIZE = 16 * 32;
+    string internal constant MIGRATED_STAKE_EVENT_SIGNATURE = "MigratedStake(address,address,uint256,bool,uint256,uint256)";
     bytes32 internal constant RESPONSE_REASONS = TempleTypes.REASON_UNBACKED_STAKE
         | TempleTypes.REASON_UNTRUSTED_MIGRATOR
         | TempleTypes.REASON_MIGRATION_WITHOUT_BACKING_INFLOW;
@@ -63,6 +64,14 @@ contract TempleMigrationBackingTrap is ITrap {
         } catch {
             return _status(TempleTypes.STATUS_METRICS_CALL_FAILED, registry, bytes32(0), address(0));
         }
+    }
+
+    function eventLogFilters() external pure returns (EventFilter[] memory filters) {
+        filters = new EventFilter[](1);
+        filters[0] = EventFilter({
+            contractAddress: TrapDeployConfig.MONITORED_TARGET,
+            signature: MIGRATED_STAKE_EVENT_SIGNATURE
+        });
     }
 
     function shouldRespond(bytes[] calldata data) external pure returns (bool, bytes memory) {

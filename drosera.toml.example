@@ -15,13 +15,16 @@ private_trap = false
 whitelist = []
 
 # IMPORTANT:
-# TempleMigrationBackingTrap reads registry from TrapDeployConfig.REGISTRY.
-# Rebuild after generating TrapDeployConfig.sol with the deployed registry:
+# TempleMigrationBackingTrap reads registry and event filter target from
+# TrapDeployConfig.REGISTRY and TrapDeployConfig.MONITORED_TARGET.
+# Rebuild after generating TrapDeployConfig.sol with deployed addresses:
 #   address internal constant REGISTRY = 0xREPLACE_WITH_DEPLOYED_REGISTRY;
+#   address internal constant MONITORED_TARGET = 0xREPLACE_WITH_MONITORED_TARGET;
 #
 # Also ensure:
 # - registry.active() == true
 # - registry.monitoredTarget() == staking/adapter target
+# - registry.monitoredTarget() == TrapDeployConfig.MONITORED_TARGET
 # - registry.responseExecutor() == response_contract
 # - target emergency module allows response_contract to call emergencyPause()
 # - TempleMigrationRiskResponse.DROSERA_CALLER matches the real Drosera caller

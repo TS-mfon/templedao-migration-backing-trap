@@ -28,8 +28,11 @@ webhook_secret_header = "x-webhook-secret"
 [inputs.templedao]
 environment_id = "0x026040bf33ba210d54fc1e1788bbf2b3e7d89f32372e9bb3caf3e4e8edf5d3df"
 registry = "0x0000000000000000000000000000000000007101"
-# TempleMigrationBackingTrap reads TrapDeployConfig.REGISTRY at compile time.
-# Rebuild after generating TrapDeployConfig.sol with the deployed registry.
+monitored_target = "0x0000000000000000000000000000000000007102"
+# TempleMigrationBackingTrap reads TrapDeployConfig.REGISTRY and
+# TrapDeployConfig.MONITORED_TARGET at compile time.
+# Rebuild after generating TrapDeployConfig.sol with the deployed registry and
+# monitored target.
 historical_stax_contract = "0xd2869042E12a3506100af1D192b5b04D65137941"
 historical_attacker = "0x9c9Fb3100A2a521985F0c47DE3B4598dafD25B01"
 invariant = "creditedStake must be backed by LP token balance; migration oldStaking must be trusted"

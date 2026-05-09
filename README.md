@@ -92,7 +92,7 @@ That ties a migration credit to the actual LP-token inflow observed around the m
 
 ## Contracts
 
-- `TempleMigrationBackingTrap`: constructorless Drosera trap using `TrapDeployConfig.REGISTRY`.
+- `TempleMigrationBackingTrap`: constructorless Drosera trap using `TrapDeployConfig.REGISTRY` for metrics collection and `TrapDeployConfig.MONITORED_TARGET` for the static `MigratedStake(address,address,uint256,bool,uint256,uint256)` event filter.
 - `TempleMigrationBackingRegistry`: stores environment ID, monitored target, response executor, and active flag.
 - `TempleMigrationRiskResponse`: validates Drosera caller, invariant ID, environment ID, target, executor, cooldown, and pause result.
 - `TempleTelegramAlertSink`: emits `TelegramAlertRequested` for webhook relays.
@@ -200,7 +200,7 @@ Do not commit the bot token. Keep it in environment variables or your secret man
 4. Deploy `TempleTelegramAlertSink(response)` if using event-based Telegram alerts.
 5. Update registry with `environmentId`, `monitoredTarget`, `responseExecutor`, `active=true`.
 6. Set the staking target emergency module or response executor to the response contract.
-7. Generate `src/TrapDeployConfig.sol` with the deployed registry address.
+7. Generate `src/TrapDeployConfig.sol` with the deployed registry address and monitored staking/adapter target.
 8. Rebuild with `forge build`.
 9. Update `drosera.toml`:
    - replace `response_contract = ""` with the deployed `TempleMigrationRiskResponse`;
@@ -209,7 +209,7 @@ Do not commit the bot token. Keep it in environment variables or your secret man
 10. Run `drosera dryrun`.
 11. Run `drosera apply`.
 
-`drosera.toml` contains all stable Ethereum mainnet and Drosera values, but the response and alert sink addresses are deployment-specific blanks. Do not run `drosera apply` until the response address is replaced with a deployed response contract. The trap reads `TrapDeployConfig.REGISTRY`, so TOML alone does not configure the registry; rebuild after generating `TrapDeployConfig.sol` with the deployed registry address.
+`drosera.toml` contains all stable Ethereum mainnet and Drosera values, but the response and alert sink addresses are deployment-specific blanks. Do not run `drosera apply` until the response address is replaced with a deployed response contract. The trap reads `TrapDeployConfig.REGISTRY` and `TrapDeployConfig.MONITORED_TARGET`, so TOML alone does not configure the registry or event-filter target; rebuild after generating `TrapDeployConfig.sol` with deployed addresses.
 
 ## Build and Test
 
@@ -223,6 +223,7 @@ The test suite covers:
 - healthy window does not trigger;
 - insufficient samples do not trigger;
 - unbacked fake migration triggers;
+- event log filter targets the `MigratedStake(address,address,uint256,bool,uint256,uint256)` event;
 - sample ordering is alert-only and does not pause;
 - malformed schema and short malformed bytes do not revert;
 - registry inactive, missing target, and metrics failure statuses;

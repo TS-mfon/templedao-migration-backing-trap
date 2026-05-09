@@ -138,6 +138,7 @@ contract FailingPauseTarget is TempleStaxLikeMock {
 contract TempleMigrationBackingTrapTest {
     Vm internal constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
     address internal constant REGISTRY_ADDR = 0x0000000000000000000000000000000000007101;
+    address internal constant MONITORED_TARGET = 0x0000000000000000000000000000000000007102;
     address internal constant DROSERA = address(0xD005E7A);
     address internal constant ATTACKER = address(0xA77A);
     bytes32 internal constant ENV = keccak256("TEMPLEDAO_STAX_ETHEREUM");
@@ -175,6 +176,18 @@ contract TempleMigrationBackingTrapTest {
         data[0] = trap.collect();
         (bool ok,) = trap.shouldRespond(data);
         _assertFalse(ok, "insufficient samples");
+    }
+
+    function testEventLogFilterTargetsMigratedStakeEvent() public {
+        TempleMigrationBackingTrap trap = new TempleMigrationBackingTrap();
+        EventFilter[] memory filters = trap.eventLogFilters();
+        _assertTrue(filters.length == 1, "one filter");
+        _assertTrue(filters[0].contractAddress == MONITORED_TARGET, "monitored target filter");
+        _assertTrue(
+            keccak256(bytes(filters[0].signature))
+                == keccak256(bytes("MigratedStake(address,address,uint256,bool,uint256,uint256)")),
+            "migrated stake signature"
+        );
     }
 
     function testSingleAnomalousSampleTriggersBecauseExploitStageIsActionable() public {
