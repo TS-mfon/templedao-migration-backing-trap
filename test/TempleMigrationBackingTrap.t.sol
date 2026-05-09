@@ -6,6 +6,12 @@ import "../src/TempleMigrationBackingTrap.sol";
 import "../src/TempleMigrationRiskResponse.sol";
 import "../src/TempleTelegramAlertSink.sol";
 import "../src/TempleTypes.sol";
+import {FakeOldStaking as FakeOldStakingV2} from "../src/mocks/FakeOldStaking.sol";
+import {GoodOldStaking as GoodOldStakingV2} from "../src/mocks/GoodOldStaking.sol";
+import {MockERC20} from "../src/mocks/MockERC20.sol";
+import {MockTempleFraxPair} from "../src/mocks/MockTempleFraxPair.sol";
+import {TempleMigrationAttackerV2} from "../src/mocks/TempleMigrationAttackerV2.sol";
+import {TempleStaxMigrationMockV2} from "../src/mocks/TempleStaxMigrationMockV2.sol";
 
 interface Vm {
     function etch(address target, bytes calldata newRuntimeBytecode) external;
@@ -53,6 +59,8 @@ contract TempleStaxLikeMock {
     bool public paused;
     uint256 public totalCreditedStake;
     uint256 public lastMigrationAmount;
+    uint256 public lastBackingBefore;
+    uint256 public lastBackingAfter;
     address public lastMigrationOldStaking;
     address public lastMigrator;
     mapping(address => uint256) public credited;
@@ -79,12 +87,16 @@ contract TempleStaxLikeMock {
     }
 
     function migrateStake(address oldStaking, uint256 amount) external {
+        uint256 backingBefore = token.balanceOf(address(this));
         FakeOldStaking(oldStaking).migrateWithdraw(msg.sender, amount);
+        uint256 backingAfter = token.balanceOf(address(this));
         credited[msg.sender] += amount;
         totalCreditedStake += amount;
         lastMigrationOldStaking = oldStaking;
         lastMigrator = msg.sender;
         lastMigrationAmount = amount;
+        lastBackingBefore = backingBefore;
+        lastBackingAfter = backingAfter;
     }
 
     function withdrawAll(bool) external {
@@ -105,6 +117,8 @@ contract TempleStaxLikeMock {
             creditedStake: totalCreditedStake,
             tokenBacking: token.balanceOf(address(this)),
             lastMigrationAmount: lastMigrationAmount,
+            lastBackingBefore: lastBackingBefore,
+            lastBackingAfter: lastBackingAfter,
             lastMigrationOldStaking: lastMigrationOldStaking,
             lastMigrator: lastMigrator,
             oldStakingTrusted: trustedOldStaking[lastMigrationOldStaking],
@@ -178,31 +192,51 @@ contract TempleMigrationBackingTrapTest {
         TempleTypes.Incident memory incident = abi.decode(payload, (TempleTypes.Incident));
         _assertTrue((incident.reasonBitmap & TempleTypes.REASON_UNBACKED_STAKE) != bytes32(0), "unbacked stake reason");
         _assertTrue((incident.reasonBitmap & TempleTypes.REASON_UNTRUSTED_MIGRATOR) != bytes32(0), "untrusted migrator reason");
+        _assertTrue(
+            (incident.reasonBitmap & TempleTypes.REASON_MIGRATION_WITHOUT_BACKING_INFLOW) != bytes32(0),
+            "missing backing inflow reason"
+        );
     }
 
-    function testSampleOrderingRejected() public {
+    function testSampleOrderingIsAlertOnly() public {
         TempleMigrationBackingTrap trap = new TempleMigrationBackingTrap();
         bytes[] memory data = _collectWindow(trap);
         bytes[] memory reversed = new bytes[](3);
         reversed[0] = data[2];
         reversed[1] = data[1];
         reversed[2] = data[0];
-        (bool ok, bytes memory payload) = trap.shouldRespond(reversed);
-        _assertTrue(ok, "bad ordering should trigger response payload");
+        (bool respond,) = trap.shouldRespond(reversed);
+        _assertFalse(respond, "bad ordering must not pause");
+        (bool ok, bytes memory payload) = trap.shouldAlert(reversed);
+        _assertTrue(ok, "bad ordering should alert");
         TempleTypes.Incident memory incident = abi.decode(payload, (TempleTypes.Incident));
         _assertTrue((incident.reasonBitmap & TempleTypes.REASON_INVALID_SAMPLE_WINDOW) != bytes32(0), "ordering reason");
     }
 
-    function testMalformedSchemaDoesNotRevert() public {
+    function testMalformedSchemaIsAlertOnly() public {
         TempleMigrationBackingTrap trap = new TempleMigrationBackingTrap();
         bytes[] memory data = _collectWindow(trap);
         TempleTypes.CollectOutput memory malformed = abi.decode(data[0], (TempleTypes.CollectOutput));
         malformed.schemaVersion = 99;
         data[0] = abi.encode(malformed);
-        (bool ok, bytes memory payload) = trap.shouldRespond(data);
-        _assertTrue(ok, "malformed schema should be represented");
+        (bool respond,) = trap.shouldRespond(data);
+        _assertFalse(respond, "malformed schema must not pause");
+        (bool ok, bytes memory payload) = trap.shouldAlert(data);
+        _assertTrue(ok, "malformed schema should alert");
         TempleTypes.Incident memory incident = abi.decode(payload, (TempleTypes.Incident));
         _assertTrue((incident.reasonBitmap & TempleTypes.REASON_INVALID_METRICS) != bytes32(0), "malformed reason");
+    }
+
+    function testMalformedShortBytesDoNotRevert() public {
+        TempleMigrationBackingTrap trap = new TempleMigrationBackingTrap();
+        bytes[] memory data = new bytes[](3);
+        data[0] = hex"1234";
+        data[1] = hex"5678";
+        data[2] = hex"90";
+        (bool respond,) = trap.shouldRespond(data);
+        _assertFalse(respond, "short bytes must not pause");
+        (bool alert,) = trap.shouldAlert(data);
+        _assertTrue(alert, "short bytes should alert");
     }
 
     function testRegistryInactiveCollectIsExplicit() public {
@@ -224,6 +258,11 @@ contract TempleMigrationBackingTrapTest {
         TempleMigrationBackingTrap trap = new TempleMigrationBackingTrap();
         TempleTypes.CollectOutput memory out = abi.decode(trap.collect(), (TempleTypes.CollectOutput));
         _assertTrue(out.status == TempleTypes.STATUS_METRICS_CALL_FAILED, "metrics failure status");
+        bytes[] memory data = _repeatSample(abi.encode(out));
+        (bool respond,) = trap.shouldRespond(data);
+        _assertFalse(respond, "metrics failure must not pause");
+        (bool alert,) = trap.shouldAlert(data);
+        _assertTrue(alert, "metrics failure should alert");
     }
 
     function testAlreadyPausedTargetDoesNotRetrigger() public {
@@ -294,6 +333,23 @@ contract TempleMigrationBackingTrapTest {
         response.handleIncident(incident);
     }
 
+    function testNonActionableIncidentRejected() public {
+        TempleTypes.Incident memory incident = _sampleIncident(address(staking), ENV);
+        incident.reasonBitmap = TempleTypes.REASON_INVALID_SAMPLE_WINDOW;
+        vm.prank(DROSERA);
+        vm.expectRevert(TempleMigrationRiskResponse.NonActionableIncident.selector);
+        response.handleIncident(incident);
+    }
+
+    function testTargetWithNoCodeRejected() public {
+        address emptyTarget = address(0xBEEF);
+        registry.setConfig(ENV, emptyTarget, address(response), true);
+        TempleTypes.Incident memory incident = _sampleIncident(emptyTarget, ENV);
+        vm.prank(DROSERA);
+        vm.expectRevert(TempleMigrationRiskResponse.TargetHasNoCode.selector);
+        response.handleIncident(incident);
+    }
+
     function testPauseFailureReverts() public {
         FailingPauseTarget failing = new FailingPauseTarget(token);
         TempleMigrationBackingRegistry failingRegistry = new TempleMigrationBackingRegistry(ENV, address(failing), address(1), true);
@@ -310,6 +366,80 @@ contract TempleMigrationBackingTrapTest {
         TempleTypes.Incident memory incident = _sampleIncident(address(staking), ENV);
         vm.expectRevert(TempleTelegramAlertSink.OnlyResponse.selector);
         sink.notifyTempleIncident(incident);
+    }
+
+    function testFullTempleStylePath_FakeMigrationWithdrawAndSwap() public {
+        MockERC20 lp = new MockERC20("Temple FRAX LP", "xLP");
+        MockERC20 temple = new MockERC20("Temple", "TEMPLE");
+        MockERC20 frax = new MockERC20("Frax", "FRAX");
+        TempleStaxMigrationMockV2 stakingV2 = new TempleStaxMigrationMockV2(address(lp));
+        MockTempleFraxPair pair = new MockTempleFraxPair(address(lp), address(temple), address(frax));
+
+        lp.mint(address(this), 2_000 ether);
+        lp.approve(address(stakingV2), 1_000 ether);
+        stakingV2.seedBackedStake(address(0xC0FFEE), 1_000 ether);
+
+        lp.approve(address(pair), 1_000 ether);
+        pair.seedLiquidity(1_000 ether, 500_000 ether, 500_000 ether);
+
+        TempleMigrationAttackerV2 attacker = new TempleMigrationAttackerV2(
+            address(stakingV2),
+            address(pair),
+            address(lp),
+            address(temple),
+            address(frax)
+        );
+
+        stakingV2.setWhitelistEnforcement(false);
+        attacker.stageFakeMigration(1_000 ether);
+
+        TempleTypes.Metrics memory metrics = stakingV2.templeMigrationMetrics();
+        _assertTrue(metrics.creditedStake > metrics.tokenBacking, "must be underbacked");
+        _assertTrue(metrics.lastBackingAfter - metrics.lastBackingBefore < metrics.lastMigrationAmount, "migration lacks LP inflow");
+        _assertFalse(metrics.oldStakingTrusted, "fake old staking is untrusted");
+
+        attacker.withdrawLp();
+        (uint256 lpBal,,) = attacker.balances();
+        _assertTrue(lpBal > 0, "attacker must receive LP");
+
+        attacker.swapLpToTempleFrax(lpBal);
+        (, uint256 templeBal, uint256 fraxBal) = attacker.balances();
+        _assertTrue(templeBal > 0 || fraxBal > 0, "attacker must swap into underlying");
+    }
+
+    function testFixedWhitelistBlocksFakeMigration() public {
+        MockERC20 lp = new MockERC20("Temple FRAX LP", "xLP");
+        TempleStaxMigrationMockV2 stakingV2 = new TempleStaxMigrationMockV2(address(lp));
+        FakeOldStakingV2 fake = new FakeOldStakingV2();
+
+        stakingV2.setWhitelistEnforcement(true);
+
+        bool reverted;
+        try stakingV2.migrateStake(address(fake), 1_000 ether) {}
+        catch {
+            reverted = true;
+        }
+        _assertTrue(reverted, "fake migration must revert when whitelist enforced");
+    }
+
+    function testTrustedOldStakingMigrationIsBacked() public {
+        MockERC20 lp = new MockERC20("Temple FRAX LP", "xLP");
+        TempleStaxMigrationMockV2 stakingV2 = new TempleStaxMigrationMockV2(address(lp));
+        GoodOldStakingV2 good = new GoodOldStakingV2(address(lp));
+
+        lp.mint(address(this), 1_000 ether);
+        lp.approve(address(good), 1_000 ether);
+        good.seed(ATTACKER, 1_000 ether);
+
+        stakingV2.setTrustedOldStaking(address(good), true);
+        stakingV2.setWhitelistEnforcement(true);
+
+        vm.prank(ATTACKER);
+        stakingV2.migrateStake(address(good), 1_000 ether);
+
+        TempleTypes.Metrics memory metrics = stakingV2.templeMigrationMetrics();
+        _assertTrue(metrics.oldStakingTrusted, "old staking should be trusted");
+        _assertTrue(metrics.lastBackingAfter - metrics.lastBackingBefore == metrics.lastMigrationAmount, "trusted migration is backed");
     }
 
     function _handle(TempleMigrationBackingTrap trap) internal {
@@ -348,9 +478,18 @@ contract TempleMigrationBackingTrapTest {
             lastMigrationOldStaking: address(0xBAD),
             lastMigrator: ATTACKER,
             lastMigrationAmount: 1_000 ether,
+            lastBackingBefore: 0,
+            lastBackingAfter: 0,
             reasonBitmap: TempleTypes.REASON_UNBACKED_STAKE | TempleTypes.REASON_UNTRUSTED_MIGRATOR,
             extraData: ""
         });
+    }
+
+    function _repeatSample(bytes memory sample) internal pure returns (bytes[] memory data) {
+        data = new bytes[](3);
+        data[0] = sample;
+        data[1] = sample;
+        data[2] = sample;
     }
 
     function _installRegistryForTrap(

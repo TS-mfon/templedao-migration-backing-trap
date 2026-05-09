@@ -17,6 +17,8 @@ contract TempleTelegramAlertSink is ITempleTelegramAlertSink {
         address lastMigrationOldStaking,
         address lastMigrator,
         uint256 lastMigrationAmount,
+        uint256 lastBackingBefore,
+        uint256 lastBackingAfter,
         bytes32 reasonBitmap
     );
 
@@ -40,6 +42,8 @@ contract TempleTelegramAlertSink is ITempleTelegramAlertSink {
             incident.lastMigrationOldStaking,
             incident.lastMigrator,
             incident.lastMigrationAmount,
+            incident.lastBackingBefore,
+            incident.lastBackingAfter,
             incident.reasonBitmap
         );
     }

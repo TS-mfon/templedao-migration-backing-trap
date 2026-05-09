@@ -8,6 +8,7 @@ interface ITempleMigrationBackingRegistry {
     function environmentId() external view returns (bytes32);
     function monitoredTarget() external view returns (address);
     function responseExecutor() external view returns (address);
+    function getConfig() external view returns (bool, bytes32, address, address);
 }
 
 interface ITempleMigrationBackingMetrics {

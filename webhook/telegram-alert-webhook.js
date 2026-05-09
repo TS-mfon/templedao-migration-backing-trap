@@ -39,6 +39,8 @@ function formatMessage(payload) {
   const oldStaking = event.lastMigrationOldStaking || event.last_migration_old_staking || "unknown";
   const migrator = event.lastMigrator || event.last_migrator || "unknown";
   const amount = event.lastMigrationAmount || event.last_migration_amount || "unknown";
+  const backingBefore = event.lastBackingBefore || event.last_backing_before || "unknown";
+  const backingAfter = event.lastBackingAfter || event.last_backing_after || "unknown";
 
   return [
     "TempleDAO migration backing alert",
@@ -49,7 +51,9 @@ function formatMessage(payload) {
     `tokenBacking: ${tokenBacking}`,
     `lastMigrationOldStaking: ${oldStaking}`,
     `lastMigrator: ${migrator}`,
-    `lastMigrationAmount: ${amount}`
+    `lastMigrationAmount: ${amount}`,
+    `lastBackingBefore: ${backingBefore}`,
+    `lastBackingAfter: ${backingAfter}`
   ].join("\n");
 }
 

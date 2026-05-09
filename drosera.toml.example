@@ -6,13 +6,25 @@ drosera_address = "0x01C344b8406c3237a6b9dbd06ef2832142866d87"
 [traps.templedao_migration_backing_trap]
 path = "out/TempleMigrationBackingTrap.sol/TempleMigrationBackingTrap.json"
 response_contract = "0xREPLACE_WITH_DEPLOYED_RESPONSE"
-response_function = "handleIncident((bytes32,bytes32,address,uint256,uint256,uint256,address,address,uint256,bytes32,bytes))"
+response_function = "handleIncident((bytes32,bytes32,address,uint256,uint256,uint256,address,address,uint256,uint256,uint256,bytes32,bytes))"
 cooldown_period_blocks = 5
-min_number_of_operators = 1
-max_number_of_operators = 3
+min_number_of_operators = 3
+max_number_of_operators = 7
 block_sample_size = 3
 private_trap = false
 whitelist = []
+
+# IMPORTANT:
+# TempleMigrationBackingTrap reads registry from TrapDeployConfig.REGISTRY.
+# Rebuild after generating TrapDeployConfig.sol with the deployed registry:
+#   address internal constant REGISTRY = 0xREPLACE_WITH_DEPLOYED_REGISTRY;
+#
+# Also ensure:
+# - registry.active() == true
+# - registry.monitoredTarget() == staking/adapter target
+# - registry.responseExecutor() == response_contract
+# - target emergency module allows response_contract to call emergencyPause()
+# - TempleMigrationRiskResponse.DROSERA_CALLER matches the real Drosera caller
 
 # Configure your Drosera webhook/notification integration to POST decoded
 # TempleTelegramAlertSink.TelegramAlertRequested events or response payloads to:

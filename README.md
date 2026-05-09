@@ -41,8 +41,9 @@ It detects:
 - `creditedStake` exceeding LP token backing held by the staking contract.
 - A recent migration from an untrusted `oldStaking` address.
 - Credit spikes that are not backed by a matching LP-token inflow.
-- Explicit registry/target/metrics failures.
-- Bad Drosera sample ordering.
+- A migration whose credited amount is not matched by LP-token backing inflow.
+- Explicit registry/target/metrics failures as alert-only operational issues.
+- Bad Drosera sample ordering as an alert-only operational issue.
 
 The on-chain response pauses the protected staking target through `emergencyPause()`. The mock proves that after the response lands, the attacker cannot complete the dangerous `withdrawAll(false)` path and the attacker LP balance remains zero.
 
@@ -81,6 +82,14 @@ lastMigrationAmount == 0 OR oldStakingTrusted == true
 
 That maps directly to the TempleDAO root cause: an arbitrary fake `oldStaking` contract must not be able to mint stake credit.
 
+A third side-effect invariant is:
+
+```text
+lastBackingAfter - lastBackingBefore >= lastMigrationAmount - tolerance
+```
+
+That ties a migration credit to the actual LP-token inflow observed around the migration. This is the direct mock-production check for the fake-old-staking primitive.
+
 ## Contracts
 
 - `TempleMigrationBackingTrap`: constructorless Drosera trap using `TrapDeployConfig.REGISTRY`.
@@ -89,12 +98,20 @@ That maps directly to the TempleDAO root cause: an arbitrary fake `oldStaking` c
 - `TempleTelegramAlertSink`: emits `TelegramAlertRequested` for webhook relays.
 - `webhook/telegram-alert-webhook.js`: minimal HTTP webhook that forwards alerts to Telegram Bot API.
 
+`shouldRespond()` only returns true for actionable exploit reasons:
+
+- `REASON_UNBACKED_STAKE`
+- `REASON_UNTRUSTED_MIGRATOR`
+- `REASON_MIGRATION_WITHOUT_BACKING_INFLOW`
+
+Operational reasons such as invalid sample ordering, inactive registry, missing target, failed metrics, invalid metrics, and already-paused target are surfaced through `shouldAlert()` and are rejected by the response contract if submitted to the pause path.
+
 ## Response Payload
 
 `drosera.toml.example` uses:
 
 ```toml
-response_function = "handleIncident((bytes32,bytes32,address,uint256,uint256,uint256,address,address,uint256,bytes32,bytes))"
+response_function = "handleIncident((bytes32,bytes32,address,uint256,uint256,uint256,address,address,uint256,uint256,uint256,bytes32,bytes))"
 ```
 
 The trap returns:
@@ -110,12 +127,14 @@ TempleTypes.Incident({
     lastMigrationOldStaking,
     lastMigrator,
     lastMigrationAmount,
+    lastBackingBefore,
+    lastBackingAfter,
     reasonBitmap,
     extraData
 })
 ```
 
-The response reverts if pause fails. It does not report containment unless `emergencyPause()` succeeds.
+The response rejects non-actionable reason bitmaps, rejects targets with no code, reverts if pause fails, and verifies `templeMigrationMetrics().paused == true` before reporting containment.
 
 ## Telegram Webhook Setup
 
@@ -163,7 +182,7 @@ POST https://YOUR_HOST/drosera/templedao
 Header: x-webhook-secret: your WEBHOOK_SECRET
 ```
 
-Configure Drosera or your event-indexer webhook to POST decoded `TelegramAlertRequested` event fields or decoded `Incident` payloads to that endpoint. The relay accepts either shape and sends a Telegram message containing target, block, reason bitmap, credited stake, backing, migrator, old staking contract, and migration amount.
+Configure Drosera or your event-indexer webhook to POST decoded `TelegramAlertRequested` event fields or decoded `Incident` payloads to that endpoint. The relay accepts either shape and sends a Telegram message containing target, block, reason bitmap, credited stake, backing, migrator, old staking contract, migration amount, and backing before/after values when available.
 
 Do not commit the bot token. Keep it in environment variables or your secret manager.
 
@@ -184,13 +203,13 @@ Do not commit the bot token. Keep it in environment variables or your secret man
 7. Generate `src/TrapDeployConfig.sol` with the deployed registry address.
 8. Rebuild with `forge build`.
 9. Update `drosera.toml`:
-   - replace `response_contract = "0x1111111111111111111111111111111111111111"` with the deployed `TempleMigrationRiskResponse`;
-   - replace `alerts.telegram.sink_contract = "0x2222222222222222222222222222222222222222"` with the deployed `TempleTelegramAlertSink`;
+   - replace `response_contract = ""` with the deployed `TempleMigrationRiskResponse`;
+   - replace `alerts.telegram.sink_contract = ""` with the deployed `TempleTelegramAlertSink`;
    - replace `alerts.telegram.webhook_url` with your public webhook URL.
 10. Run `drosera dryrun`.
 11. Run `drosera apply`.
 
-`drosera.toml` contains all stable Ethereum mainnet and Drosera values, but the response and alert sink addresses are deployment-specific sentinels. Do not run `drosera apply` until both are replaced with deployed addresses.
+`drosera.toml` contains all stable Ethereum mainnet and Drosera values, but the response and alert sink addresses are deployment-specific blanks. Do not run `drosera apply` until the response address is replaced with a deployed response contract. The trap reads `TrapDeployConfig.REGISTRY`, so TOML alone does not configure the registry; rebuild after generating `TrapDeployConfig.sol` with the deployed registry address.
 
 ## Build and Test
 
@@ -204,13 +223,19 @@ The test suite covers:
 - healthy window does not trigger;
 - insufficient samples do not trigger;
 - unbacked fake migration triggers;
-- sample ordering is enforced;
-- malformed schema does not revert;
+- sample ordering is alert-only and does not pause;
+- malformed schema and short malformed bytes do not revert;
 - registry inactive, missing target, and metrics failure statuses;
+- metrics failures are alert-only and do not pause;
+- non-actionable incidents are rejected by the response;
+- targets with no code are rejected by the response;
 - wrong caller, invariant, environment, target, and response executor rejection;
 - pause failure reverts;
 - response pauses target;
 - attacker `withdrawAll(false)` completion is blocked after response;
+- full fake migration to LP withdrawal to TEMPLE/FRAX swap path without response;
+- whitelist enforcement blocks fake migration;
+- trusted old staking migration has matching LP backing inflow;
 - already paused target does not retrigger;
 - Telegram alert sink authorization.
 
@@ -223,6 +248,7 @@ The trap trusts `templeMigrationMetrics()` on the monitored target or adapter. T
 - last migration old staking address;
 - last migrator;
 - last migration amount;
+- last backing before and after the migration;
 - whether the old staking address is trusted;
 - paused status.
 

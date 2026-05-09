@@ -9,11 +9,11 @@ path = "out/TempleMigrationBackingTrap.sol/TempleMigrationBackingTrap.json"
 # Blank because TempleMigrationRiskResponse has not been deployed on mainnet.
 # Set this to the deployed response address before `drosera apply`.
 response_contract = ""
-response_function = "handleIncident((bytes32,bytes32,address,uint256,uint256,uint256,address,address,uint256,bytes32,bytes))"
+response_function = "handleIncident((bytes32,bytes32,address,uint256,uint256,uint256,address,address,uint256,uint256,uint256,bytes32,bytes))"
 
 cooldown_period_blocks = 5
-min_number_of_operators = 1
-max_number_of_operators = 3
+min_number_of_operators = 3
+max_number_of_operators = 7
 block_sample_size = 3
 private_trap = false
 whitelist = []
@@ -21,13 +21,15 @@ whitelist = []
 [alerts.telegram]
 enabled = true
 sink_contract = ""
-event = "TelegramAlertRequested(bytes32,bytes32,address,uint256,uint256,uint256,address,address,uint256,bytes32)"
+event = "TelegramAlertRequested(bytes32,bytes32,address,uint256,uint256,uint256,address,address,uint256,uint256,uint256,bytes32)"
 webhook_url = "https://YOUR_WEBHOOK_HOST/drosera/templedao"
 webhook_secret_header = "x-webhook-secret"
 
 [inputs.templedao]
 environment_id = "0x026040bf33ba210d54fc1e1788bbf2b3e7d89f32372e9bb3caf3e4e8edf5d3df"
 registry = "0x0000000000000000000000000000000000007101"
+# TempleMigrationBackingTrap reads TrapDeployConfig.REGISTRY at compile time.
+# Rebuild after generating TrapDeployConfig.sol with the deployed registry.
 historical_stax_contract = "0xd2869042E12a3506100af1D192b5b04D65137941"
 historical_attacker = "0x9c9Fb3100A2a521985F0c47DE3B4598dafD25B01"
 invariant = "creditedStake must be backed by LP token balance; migration oldStaking must be trusted"

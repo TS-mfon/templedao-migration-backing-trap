@@ -26,11 +26,14 @@ library TempleTypes {
     bytes32 internal constant REASON_INVALID_SAMPLE_WINDOW = bytes32(uint256(1 << 7));
     bytes32 internal constant REASON_INVALID_METRICS = bytes32(uint256(1 << 8));
     bytes32 internal constant REASON_ALREADY_PAUSED = bytes32(uint256(1 << 9));
+    bytes32 internal constant REASON_MIGRATION_WITHOUT_BACKING_INFLOW = bytes32(uint256(1 << 10));
 
     struct Metrics {
         uint256 creditedStake;
         uint256 tokenBacking;
         uint256 lastMigrationAmount;
+        uint256 lastBackingBefore;
+        uint256 lastBackingAfter;
         address lastMigrationOldStaking;
         address lastMigrator;
         bool oldStakingTrusted;
@@ -48,6 +51,8 @@ library TempleTypes {
         uint256 creditedStake;
         uint256 tokenBacking;
         uint256 lastMigrationAmount;
+        uint256 lastBackingBefore;
+        uint256 lastBackingAfter;
         address lastMigrationOldStaking;
         address lastMigrator;
         bool oldStakingTrusted;
@@ -64,6 +69,8 @@ library TempleTypes {
         address lastMigrationOldStaking;
         address lastMigrator;
         uint256 lastMigrationAmount;
+        uint256 lastBackingBefore;
+        uint256 lastBackingAfter;
         bytes32 reasonBitmap;
         bytes extraData;
     }

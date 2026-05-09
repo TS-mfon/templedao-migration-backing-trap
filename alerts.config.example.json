@@ -3,7 +3,7 @@
   "enabled": true,
   "source": {
     "contract": "0x2222222222222222222222222222222222222222",
-    "event": "TelegramAlertRequested(bytes32,bytes32,address,uint256,uint256,uint256,address,address,uint256,bytes32)"
+    "event": "TelegramAlertRequested(bytes32,bytes32,address,uint256,uint256,uint256,address,address,uint256,uint256,uint256,bytes32)"
   },
   "webhook": {
     "url": "https://YOUR_WEBHOOK_HOST/drosera/templedao",

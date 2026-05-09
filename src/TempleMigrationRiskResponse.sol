@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {
+    ITempleMigrationBackingMetrics,
     ITempleMigrationBackingRegistry,
     ITempleMigrationEmergency,
     ITempleTelegramAlertSink
@@ -33,6 +34,13 @@ contract TempleMigrationRiskResponse {
     error RegistryInactive();
     error CooldownActive();
     error PauseFailed(bytes returnData);
+    error NonActionableIncident();
+    error TargetHasNoCode();
+    error PauseDidNotTakeEffect();
+
+    bytes32 internal constant ACTIONABLE_REASONS = TempleTypes.REASON_UNBACKED_STAKE
+        | TempleTypes.REASON_UNTRUSTED_MIGRATOR
+        | TempleTypes.REASON_MIGRATION_WITHOUT_BACKING_INFLOW;
 
     constructor(address droseraCaller_, address registry_, address telegramAlertSink_, uint256 cooldownBlocks_) {
         if (droseraCaller_ == address(0) || registry_ == address(0)) revert ZeroAddress();
@@ -50,10 +58,14 @@ contract TempleMigrationRiskResponse {
         if (incident.target != REGISTRY.monitoredTarget()) revert WrongTarget();
         if (REGISTRY.responseExecutor() != address(this)) revert WrongResponseExecutor();
         if (lastHandledBlock != 0 && block.number < lastHandledBlock + COOLDOWN_BLOCKS) revert CooldownActive();
+        if ((incident.reasonBitmap & ACTIONABLE_REASONS) == bytes32(0)) revert NonActionableIncident();
+        if (incident.target.code.length == 0) revert TargetHasNoCode();
 
         (bool success, bytes memory returnData) = incident.target.call(abi.encodeCall(ITempleMigrationEmergency.emergencyPause, ()));
         emit PauseAttempted(incident.target, success, returnData);
         if (!success) revert PauseFailed(returnData);
+        TempleTypes.Metrics memory metrics = ITempleMigrationBackingMetrics(incident.target).templeMigrationMetrics();
+        if (!metrics.paused) revert PauseDidNotTakeEffect();
 
         lastHandledBlock = block.number;
         if (address(TELEGRAM_ALERT_SINK) != address(0)) {

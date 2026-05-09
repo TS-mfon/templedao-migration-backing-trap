@@ -27,6 +27,10 @@ contract TempleMigrationBackingRegistry {
         return activeFlag == 1;
     }
 
+    function getConfig() external view returns (bool, bytes32, address, address) {
+        return (activeFlag == 1, environmentId, monitoredTarget, responseExecutor);
+    }
+
     function _setConfig(bytes32 environmentId_, address monitoredTarget_, address responseExecutor_, bool active_) internal {
         if (environmentId_ == bytes32(0) || monitoredTarget_ == address(0) || responseExecutor_ == address(0)) {
             revert ZeroAddress();
