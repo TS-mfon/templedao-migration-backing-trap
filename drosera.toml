@@ -15,6 +15,8 @@ cooldown_period_blocks = 5
 min_number_of_operators = 3
 max_number_of_operators = 7
 block_sample_size = 3
+# Must equal TempleMigrationBackingTrap.REQUIRED_SAMPLES.
+# The trap rejects shorter and longer windows to keep invariant semantics fixed.
 private_trap = false
 whitelist = ["0xEd9EDd8586b20524CafA4F568413C504C9B03172"]
 

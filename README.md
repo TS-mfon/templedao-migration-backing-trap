@@ -94,7 +94,7 @@ That ties a migration credit to the actual LP-token inflow observed around the m
 
 - `TempleMigrationBackingTrap`: constructorless Drosera trap using `TrapDeployConfig.REGISTRY` for metrics collection and `TrapDeployConfig.MONITORED_TARGET` for the static `MigratedStake(address,address,uint256,bool,uint256,uint256)` event filter.
 - `TempleMigrationBackingRegistry`: stores environment ID, monitored target, response executor, and active flag.
-- `TempleMigrationRiskResponse`: validates Drosera caller, invariant ID, environment ID, target, executor, cooldown, and pause result.
+- `TempleMigrationRiskResponse`: validates Drosera caller, invariant ID, environment ID, target, executor, cooldown, duplicate incident hash, and pause result.
 - `TempleTelegramAlertSink`: emits `TelegramAlertRequested` for webhook relays.
 - `webhook/telegram-alert-webhook.js`: minimal HTTP webhook that forwards alerts to Telegram Bot API.
 
@@ -106,7 +106,7 @@ That ties a migration credit to the actual LP-token inflow observed around the m
 
 Operational reasons such as invalid sample ordering, inactive registry, missing target, failed metrics, invalid metrics, and already-paused target are surfaced through `shouldAlert()` and are rejected by the response contract if submitted to the pause path.
 
-All `shouldAlert()` trigger paths return `abi.encode(TempleTypes.Incident)`, including malformed sample alerts. If the samples are malformed and no current sample can be decoded, the trap emits a synthetic Incident with `target = address(0)`, `environmentId = bytes32(0)`, and `reasonBitmap = REASON_INVALID_METRICS`. This keeps alert decoding stable for webhooks and telemetry consumers. Integrations can use `decodeAlertOutput(bytes)` to decode the payload consistently.
+All `shouldAlert()` trigger paths return `abi.encode(TempleTypes.Incident)`, including malformed sample alerts. If the samples are malformed and no current sample can be decoded, the trap emits a synthetic Incident with `target = address(0)`, `environmentId = bytes32(0)`, and `reasonBitmap = REASON_INVALID_METRICS`. This keeps alert decoding stable for webhooks and telemetry consumers. Integrations can use `decodeAlertOutput(bytes)` to decode the payload consistently. `CollectOutput` samples are manually decoded in response and alert logic so same-length malformed ABI words for `uint8` and `bool` fields cannot make the trap revert.
 
 ## Response Payload
 
@@ -136,7 +136,7 @@ TempleTypes.Incident({
 })
 ```
 
-The response rejects non-actionable reason bitmaps, rejects targets with no code, reverts if pause fails, and verifies `templeMigrationMetrics().paused == true` before reporting containment.
+The response rejects non-actionable reason bitmaps, rejects targets with no code, rejects duplicate incidents, reverts if pause fails, and verifies `templeMigrationMetrics().paused == true` before reporting containment. Telegram sink failures are caught and emitted as `AlertSinkFailed`, so alerting cannot block containment.
 
 ## Telegram Webhook Setup
 
@@ -211,7 +211,7 @@ Do not commit the bot token. Keep it in environment variables or your secret man
 10. Run `drosera dryrun`.
 11. Run `drosera apply`.
 
-`drosera.toml` contains all stable Ethereum mainnet and Drosera values, but the response and alert sink addresses are deployment-specific blanks. Do not run `drosera apply` until the response address is replaced with a deployed response contract. The trap reads `TrapDeployConfig.REGISTRY` and `TrapDeployConfig.MONITORED_TARGET`, so TOML alone does not configure the registry or event-filter target; rebuild after generating `TrapDeployConfig.sol` with deployed addresses.
+`drosera.toml` contains all stable network and Drosera values plus the current Hoodi deployment addresses. The trap reads `TrapDeployConfig.REGISTRY` and `TrapDeployConfig.MONITORED_TARGET`, so TOML alone does not configure the registry or event-filter target; rebuild after generating `TrapDeployConfig.sol` with deployed addresses. `block_sample_size` must equal `TempleMigrationBackingTrap.REQUIRED_SAMPLES`; the trap rejects shorter and longer windows to keep invariant semantics fixed.
 
 ## Build and Test
 
@@ -223,17 +223,20 @@ forge test -vvv
 The test suite covers:
 
 - healthy window does not trigger;
-- insufficient samples do not trigger;
+- insufficient samples do not trigger response;
+- oversized windows do not trigger response and produce alert-only invalid-window incidents;
 - unbacked fake migration triggers;
 - event log filter targets the `MigratedStake(address,address,uint256,bool,uint256,uint256)` event;
 - sample ordering is alert-only and does not pause;
-- malformed schema and short malformed bytes do not revert;
+- malformed schema, short bytes, long bytes, and same-length malformed bool words do not revert;
 - registry inactive, missing target, and metrics failure statuses;
 - metrics failures are alert-only and do not pause;
 - non-actionable incidents are rejected by the response;
 - targets with no code are rejected by the response;
 - wrong caller, invariant, environment, target, and response executor rejection;
 - pause failure reverts;
+- duplicate incidents are rejected after cooldown;
+- alert sink failure does not block containment;
 - response pauses target;
 - attacker `withdrawAll(false)` completion is blocked after response;
 - full fake migration to LP withdrawal to TEMPLE/FRAX swap path without response;

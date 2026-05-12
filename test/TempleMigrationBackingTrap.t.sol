@@ -135,6 +135,12 @@ contract FailingPauseTarget is TempleStaxLikeMock {
     }
 }
 
+contract RevertingAlertSink {
+    function notifyTempleIncident(TempleTypes.Incident calldata) external pure {
+        revert("alert sink failed");
+    }
+}
+
 contract TempleMigrationBackingTrapTest {
     Vm internal constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
     address internal constant REGISTRY_ADDR = 0xFD8Ab47B2D53f768baDAB66cf07C401522A450bd;
@@ -274,6 +280,57 @@ contract TempleMigrationBackingTrapTest {
         _assertTrue(incident.reasonBitmap == TempleTypes.REASON_INVALID_METRICS, "long malformed reason");
     }
 
+    function testMalformedCanonicalLengthBadBoolDoesNotRevert() public {
+        TempleMigrationBackingTrap trap = new TempleMigrationBackingTrap();
+        bytes memory sample = new bytes(16 * 32);
+
+        assembly {
+            mstore(add(sample, 32), 1)
+            mstore(add(sample, add(32, mul(14, 32))), 2)
+            mstore(add(sample, add(32, mul(15, 32))), 3)
+        }
+
+        bytes[] memory data = new bytes[](3);
+        data[0] = sample;
+        data[1] = sample;
+        data[2] = sample;
+
+        (bool respond,) = trap.shouldRespond(data);
+        _assertFalse(respond, "same-length malformed bool must not respond");
+
+        (bool alert, bytes memory payload) = trap.shouldAlert(data);
+        _assertTrue(alert, "same-length malformed bool should alert");
+
+        TempleTypes.Incident memory incident = trap.decodeAlertOutput(payload);
+        _assertTrue(
+            (incident.reasonBitmap & TempleTypes.REASON_INVALID_SAMPLE_WINDOW) != bytes32(0)
+                || (incident.reasonBitmap & TempleTypes.REASON_INVALID_METRICS) != bytes32(0),
+            "invalid reason"
+        );
+    }
+
+    function testShouldRespondRejectsOversizedWindow() public {
+        TempleMigrationBackingTrap trap = new TempleMigrationBackingTrap();
+        bytes[] memory data = _collectWindow4(trap);
+
+        (bool ok,) = trap.shouldRespond(data);
+        _assertFalse(ok, "oversized window must not respond");
+    }
+
+    function testShouldAlertFlagsOversizedWindow() public {
+        TempleMigrationBackingTrap trap = new TempleMigrationBackingTrap();
+        bytes[] memory data = _collectWindow4(trap);
+
+        (bool ok, bytes memory payload) = trap.shouldAlert(data);
+        _assertTrue(ok, "oversized window should alert");
+
+        TempleTypes.Incident memory incident = trap.decodeAlertOutput(payload);
+        _assertTrue(
+            (incident.reasonBitmap & TempleTypes.REASON_INVALID_SAMPLE_WINDOW) != bytes32(0),
+            "invalid sample window reason"
+        );
+    }
+
     function testRegistryInactiveCollectIsExplicit() public {
         _installRegistryForTrap(address(registry), ENV, address(staking), address(response), false);
         TempleMigrationBackingTrap trap = new TempleMigrationBackingTrap();
@@ -396,6 +453,31 @@ contract TempleMigrationBackingTrapTest {
         failingResponse.handleIncident(incident);
     }
 
+    function testDuplicateIncidentRejectedAfterCooldown() public {
+        TempleTypes.Incident memory incident = _sampleIncident(address(staking), ENV);
+        vm.prank(DROSERA);
+        response.handleIncident(incident);
+
+        vm.roll(block.number + 3);
+        vm.prank(DROSERA);
+        vm.expectRevert(TempleMigrationRiskResponse.DuplicateIncident.selector);
+        response.handleIncident(incident);
+    }
+
+    function testAlertSinkFailureDoesNotBlockContainment() public {
+        RevertingAlertSink badSink = new RevertingAlertSink();
+        TempleMigrationRiskResponse responseWithBadSink =
+            new TempleMigrationRiskResponse(DROSERA, address(registry), address(badSink), 0);
+        registry.setConfig(ENV, address(staking), address(responseWithBadSink), true);
+        staking.setResponseExecutor(address(responseWithBadSink));
+
+        TempleTypes.Incident memory incident = _sampleIncident(address(staking), ENV);
+        vm.prank(DROSERA);
+        responseWithBadSink.handleIncident(incident);
+
+        _assertTrue(staking.paused(), "containment should succeed despite alert sink revert");
+    }
+
     function testAlertSinkOnlyResponse() public {
         TempleTelegramAlertSink sink = new TempleTelegramAlertSink(address(response));
         TempleTypes.Incident memory incident = _sampleIncident(address(staking), ENV);
@@ -495,6 +577,17 @@ contract TempleMigrationBackingTrapTest {
 
     function _collectWindow(TempleMigrationBackingTrap trap) internal returns (bytes[] memory data) {
         data = new bytes[](3);
+        data[2] = trap.collect();
+        vm.roll(block.number + 1);
+        data[1] = trap.collect();
+        vm.roll(block.number + 1);
+        data[0] = trap.collect();
+    }
+
+    function _collectWindow4(TempleMigrationBackingTrap trap) internal returns (bytes[] memory data) {
+        data = new bytes[](4);
+        data[3] = trap.collect();
+        vm.roll(block.number + 1);
         data[2] = trap.collect();
         vm.roll(block.number + 1);
         data[1] = trap.collect();

@@ -75,16 +75,20 @@ contract TempleMigrationBackingTrap is ITrap {
     }
 
     function shouldRespond(bytes[] calldata data) external pure returns (bool, bytes memory) {
-        if (data.length < REQUIRED_SAMPLES) return (false, bytes(""));
+        if (data.length != REQUIRED_SAMPLES) return (false, bytes(""));
         if (!_validEncodedSamples(data)) return (false, bytes(""));
 
-        TempleTypes.CollectOutput memory current = abi.decode(data[0], (TempleTypes.CollectOutput));
+        (bool currentOk, TempleTypes.CollectOutput memory current) = _decodeCollectOutput(data[0]);
+        if (!currentOk) return (false, bytes(""));
         if (!_validWindow(data)) return (false, bytes(""));
         if (current.schemaVersion != SCHEMA_VERSION || current.invariantId != TempleTypes.INVARIANT_ID) return (false, bytes(""));
         if (current.paused) return (false, bytes(""));
 
-        TempleTypes.CollectOutput memory previous = abi.decode(data[1], (TempleTypes.CollectOutput));
-        TempleTypes.CollectOutput memory oldest = abi.decode(data[data.length - 1], (TempleTypes.CollectOutput));
+        (bool previousOk, TempleTypes.CollectOutput memory previous) = _decodeCollectOutput(data[1]);
+        if (!previousOk) return (false, bytes(""));
+
+        (bool oldestOk, TempleTypes.CollectOutput memory oldest) = _decodeCollectOutput(data[REQUIRED_SAMPLES - 1]);
+        if (!oldestOk) return (false, bytes(""));
 
         bytes32 reasons = _criticalReasons(current, previous, oldest);
         if ((reasons & RESPONSE_REASONS) == bytes32(0)) return (false, bytes(""));
@@ -92,12 +96,17 @@ contract TempleMigrationBackingTrap is ITrap {
     }
 
     function shouldAlert(bytes[] calldata data) external pure returns (bool, bytes memory) {
-        if (data.length < REQUIRED_SAMPLES) return (false, bytes(""));
+        if (data.length != REQUIRED_SAMPLES) {
+            return _syntheticAlert(TempleTypes.REASON_INVALID_SAMPLE_WINDOW, TempleTypes.STATUS_INVALID_METRICS);
+        }
         if (!_validEncodedSamples(data)) {
             return _syntheticAlert(TempleTypes.REASON_INVALID_METRICS, TempleTypes.STATUS_INVALID_METRICS);
         }
 
-        TempleTypes.CollectOutput memory current = abi.decode(data[0], (TempleTypes.CollectOutput));
+        (bool currentOk, TempleTypes.CollectOutput memory current) = _decodeCollectOutput(data[0]);
+        if (!currentOk) {
+            return _syntheticAlert(TempleTypes.REASON_INVALID_METRICS, TempleTypes.STATUS_INVALID_METRICS);
+        }
         bytes32 reasons;
         if (!_validWindow(data)) reasons |= TempleTypes.REASON_INVALID_SAMPLE_WINDOW;
         if (current.schemaVersion != SCHEMA_VERSION || current.invariantId != TempleTypes.INVARIANT_ID) {
@@ -142,16 +151,65 @@ contract TempleMigrationBackingTrap is ITrap {
     }
 
     function _validWindow(bytes[] calldata data) internal pure returns (bool) {
-        TempleTypes.CollectOutput memory previous = abi.decode(data[0], (TempleTypes.CollectOutput));
+        (bool okPrevious, TempleTypes.CollectOutput memory previous) = _decodeCollectOutput(data[0]);
+        if (!okPrevious) return false;
+
         for (uint256 i = 1; i < data.length; i++) {
-            TempleTypes.CollectOutput memory sample = abi.decode(data[i], (TempleTypes.CollectOutput));
+            (bool okSample, TempleTypes.CollectOutput memory sample) = _decodeCollectOutput(data[i]);
+            if (!okSample) return false;
             if (sample.schemaVersion != SCHEMA_VERSION) return false;
-            if (sample.environmentId != previous.environmentId || sample.target != previous.target) return false;
+            if (sample.environmentId != previous.environmentId) return false;
+            if (sample.target != previous.target) return false;
             if (previous.observedBlockNumber <= sample.observedBlockNumber) return false;
             if (previous.observedBlockNumber - sample.observedBlockNumber > MAX_BLOCK_GAP) return false;
             previous = sample;
         }
         return true;
+    }
+
+    function _decodeCollectOutput(bytes calldata raw)
+        internal
+        pure
+        returns (bool ok, TempleTypes.CollectOutput memory out)
+    {
+        if (raw.length != COLLECT_OUTPUT_ENCODED_SIZE) return (false, out);
+
+        out.schemaVersion = uint8(_uintAt(raw, 0));
+        out.status = uint8(_uintAt(raw, 1));
+        out.invariantId = _bytes32At(raw, 2);
+        out.environmentId = _bytes32At(raw, 3);
+        out.registry = _addressAt(raw, 4);
+        out.target = _addressAt(raw, 5);
+        out.observedBlockNumber = _uintAt(raw, 6);
+        out.creditedStake = _uintAt(raw, 7);
+        out.tokenBacking = _uintAt(raw, 8);
+        out.lastMigrationAmount = _uintAt(raw, 9);
+        out.lastBackingBefore = _uintAt(raw, 10);
+        out.lastBackingAfter = _uintAt(raw, 11);
+        out.lastMigrationOldStaking = _addressAt(raw, 12);
+        out.lastMigrator = _addressAt(raw, 13);
+        out.oldStakingTrusted = _uintAt(raw, 14) != 0;
+        out.paused = _uintAt(raw, 15) != 0;
+
+        return (true, out);
+    }
+
+    function _wordAt(bytes calldata raw, uint256 index) internal pure returns (bytes32 word) {
+        assembly {
+            word := calldataload(add(raw.offset, mul(index, 32)))
+        }
+    }
+
+    function _uintAt(bytes calldata raw, uint256 index) internal pure returns (uint256) {
+        return uint256(_wordAt(raw, index));
+    }
+
+    function _bytes32At(bytes calldata raw, uint256 index) internal pure returns (bytes32) {
+        return _wordAt(raw, index);
+    }
+
+    function _addressAt(bytes calldata raw, uint256 index) internal pure returns (address) {
+        return address(uint160(uint256(_wordAt(raw, index))));
     }
 
     function _validEncodedSamples(bytes[] calldata data) internal pure returns (bool) {

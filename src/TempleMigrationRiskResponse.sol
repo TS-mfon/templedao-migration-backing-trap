@@ -15,8 +15,10 @@ contract TempleMigrationRiskResponse {
     ITempleTelegramAlertSink public immutable TELEGRAM_ALERT_SINK;
     uint256 public immutable COOLDOWN_BLOCKS;
     uint256 public lastHandledBlock;
+    mapping(bytes32 => bool) public handledIncident;
 
     event PauseAttempted(address indexed target, bool success, bytes returnData);
+    event AlertSinkFailed(bytes32 indexed incidentHash, bytes reason);
     event IncidentHandled(
         bytes32 indexed invariantId,
         bytes32 indexed environmentId,
@@ -37,6 +39,7 @@ contract TempleMigrationRiskResponse {
     error NonActionableIncident();
     error TargetHasNoCode();
     error PauseDidNotTakeEffect();
+    error DuplicateIncident();
 
     bytes32 internal constant ACTIONABLE_REASONS = TempleTypes.REASON_UNBACKED_STAKE
         | TempleTypes.REASON_UNTRUSTED_MIGRATOR
@@ -60,6 +63,8 @@ contract TempleMigrationRiskResponse {
         if (lastHandledBlock != 0 && block.number < lastHandledBlock + COOLDOWN_BLOCKS) revert CooldownActive();
         if ((incident.reasonBitmap & ACTIONABLE_REASONS) == bytes32(0)) revert NonActionableIncident();
         if (incident.target.code.length == 0) revert TargetHasNoCode();
+        bytes32 incidentHash = _incidentHash(incident);
+        if (handledIncident[incidentHash]) revert DuplicateIncident();
 
         (bool success, bytes memory returnData) = incident.target.call(abi.encodeCall(ITempleMigrationEmergency.emergencyPause, ()));
         emit PauseAttempted(incident.target, success, returnData);
@@ -67,9 +72,13 @@ contract TempleMigrationRiskResponse {
         TempleTypes.Metrics memory metrics = ITempleMigrationBackingMetrics(incident.target).templeMigrationMetrics();
         if (!metrics.paused) revert PauseDidNotTakeEffect();
 
+        handledIncident[incidentHash] = true;
         lastHandledBlock = block.number;
         if (address(TELEGRAM_ALERT_SINK) != address(0)) {
-            TELEGRAM_ALERT_SINK.notifyTempleIncident(incident);
+            try TELEGRAM_ALERT_SINK.notifyTempleIncident(incident) {}
+            catch (bytes memory reason) {
+                emit AlertSinkFailed(incidentHash, reason);
+            }
         }
 
         emit IncidentHandled(
@@ -78,6 +87,26 @@ contract TempleMigrationRiskResponse {
             incident.target,
             incident.blockNumber,
             incident.reasonBitmap
+        );
+    }
+
+    function _incidentHash(TempleTypes.Incident calldata incident) internal pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                incident.invariantId,
+                incident.environmentId,
+                incident.target,
+                incident.blockNumber,
+                incident.creditedStake,
+                incident.tokenBacking,
+                incident.lastMigrationOldStaking,
+                incident.lastMigrator,
+                incident.lastMigrationAmount,
+                incident.lastBackingBefore,
+                incident.lastBackingAfter,
+                incident.reasonBitmap,
+                keccak256(incident.extraData)
+            )
         );
     }
 }
